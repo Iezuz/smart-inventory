@@ -1,0 +1,131 @@
+version: '3.8'
+
+services:
+  inventory-db:
+    image: mysql:8.0
+    container_name: inventory-db
+    restart: always
+    environment:
+      MYSQL_DATABASE: inventory_db
+      MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
+    ports:
+      - "3306:3306"
+    volumes:
+      - inventory-data:/var/lib/mysql
+      - ./db-dumps/inventory.sql:/docker-entrypoint-initdb.d/inventory.sql
+    command: --default-authentication-plugin=mysql_native_password
+    networks:
+      - smartinventory-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root"]
+      timeout: 20s
+      retries: 10
+
+  transactions-db:
+    image: mysql:8.0
+    container_name: transactions-db
+    restart: always
+    environment:
+      MYSQL_DATABASE: transactions_db
+      MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
+    ports:
+      - "3307:3306"
+    volumes:
+      - transactions-data:/var/lib/mysql
+      - ./db-dumps/transactions.sql:/docker-entrypoint-initdb.d/transactions.sql
+    command: --default-authentication-plugin=mysql_native_password
+    networks:
+      - smartinventory-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root"]
+      timeout: 20s
+      retries: 10
+
+  reporting-db:
+    image: mysql:8.0
+    container_name: reporting-db
+    restart: always
+    environment:
+      MYSQL_DATABASE: reporting_db
+      MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
+    ports:
+      - "3308:3306"
+    volumes:
+      - reporting-data:/var/lib/mysql
+      - ./db-dumps/reporting.sql:/docker-entrypoint-initdb.d/reporting.sql
+    command: --default-authentication-plugin=mysql_native_password
+    networks:
+      - smartinventory-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root"]
+      timeout: 20s
+      retries: 10
+
+  inventory-service:
+    build: ./inventory
+    ports:
+      - "8081:8081"
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+    depends_on:
+      inventory-db:
+        condition: service_healthy
+    networks:
+      - smartinventory-network
+
+  reporting-service:
+    build: ./reporting
+    ports:
+      - "8083:8083"
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+    depends_on:
+      reporting-db:
+        condition: service_healthy
+    networks:
+      - smartinventory-network
+
+  transaction-service:
+    build: ./transactions
+    ports:
+      - "8082:8082"
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+    depends_on:
+      transactions-db:
+        condition: service_healthy
+      inventory-service:
+        condition: service_started
+      reporting-service:
+        condition: service_started
+    networks:
+      - smartinventory-network
+
+  gateway-service:
+    build: ./gateaway
+    ports:
+      - "8080:8080"
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+    depends_on:
+      - transaction-service
+      - inventory-service
+      - reporting-service
+    networks:
+      - smartinventory-network
+
+  frontend:
+    build: ./smartInventory-frontend
+    ports:
+      - "3000:80"
+    networks:
+      - smartinventory-network
+
+networks:
+  smartinventory-network:
+    driver: bridge
+
+volumes:
+  inventory-data:
+  transactions-data:
+  reporting-data:
